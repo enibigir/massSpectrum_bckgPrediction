@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "Every input and output path of this repository, read by paths.py (all scripts take --paths FILE).",
+    "Relative paths are taken from this repository: ../output is the output/ of TupleAnalysis when this",
+    "repository sits inside it. $VARIABLES and ~ are expanded. No production version in the file names.",
+    "output_dir:      where LaunchBkgPred.py files the predictions; read by systBckg.py and ShowPlots.py.",
+    "datasets:        the inputs of the prediction: step 1 file (with or without .root) and sampleType,",
+    "                 which selects the dE/dx calibration (data2024 | mc2024 | ttbar2024 | ...).",
+    "launch:          the datasets LaunchBkgPred.py runs on (--datasets overrides it).",
+    "dataset:         the dataset systBckg.py and ShowPlots.py work on (--dataset overrides it).",
+    "signal_dir:      Gluino_Run3_MET_madgraph_<mass>[_weighted].root, read by systSignal.py.",
+    "mc_stack:        weighted backgrounds stacked by PlottingMacro.py in MC mode.",
+    "signal_overlays: the three signal points drawn by PlottingMacro.py, with their legend labels.",
+    "Weighted files: TupleAnalysis python/Weight.py (see README section 5)."
+  ],
+  "output_dir": "outputHist",
+  "datasets": {
+    "data":  {"file": "../output/JetMET2024C.root",  "sampleType": "data2024"},
+    "mc":    {"file": "../output/HistForBkg_MC.root", "sampleType": "mc2024"},
+    "ttbar": {"file": "../output/TTbar2024.root",     "sampleType": "ttbar2024"}
+  },
+  "launch": ["data"],
+  "dataset": "data",
+  "signal_dir": "../output",
+  "mc_stack": {
+    "wjets":         "../output/WjetMuNu2024_weighted.root",
+    "ttbar":         "../output/TTbar2024_weighted.root",
+    "ttbar_semilep": "../output/TTbarSemiLep2024_weighted.root",
+    "qcd":           "../output/QCD2024_weighted.root"
+  },
+  "signal_overlays": [
+    {"file": "../output/Gluino_Run3_MET_madgraph_2000_weighted.root", "label": "#tilde{g} (M=2000 GeV)"},
+    {"file": "../output/Gluino_Run3_MET_madgraph_2400_weighted.root", "label": "#tilde{g} (M=2400 GeV)"},
+    {"file": "../output/Gluino_Run3_MET_madgraph_2600_weighted.root", "label": "#tilde{g} (M=2600 GeV)"}
+  ]
+}

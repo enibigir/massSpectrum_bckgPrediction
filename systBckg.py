@@ -29,12 +29,13 @@ LaunchBkgPred.py) and produces the file expected by ShowPlots.py:
 #  factor and cancels in the ratio.
 # =============================================================================
 
-import os, re, sys, math, array, ctypes
+import os, sys, math, array, ctypes
 from optparse import OptionParser
 
 import ROOT
 from ROOT import TFile, TCanvas, TLegend, TLatex, TPad, TLine
 import tdrstyle
+import paths
 
 ROOT.gROOT.SetBatch(True)              # no X11: the script only writes files
 ROOT.gErrorIgnoreLevel = ROOT.kWarning
@@ -47,11 +48,9 @@ tdrstyle.setTDRStyle()
 # ==================================================================
 #   Settings: MUST match those of ShowPlots.py
 # ==================================================================
-# These reproduce, by hand, the path convention built by LaunchBkgPred.py.
-BASE       = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/outputHist"
-DATASET   = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/JetMET2024_V12/JetMET2024_V12p35"
-#DATASET    = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/HistForBkg_MC_V3"
-SAMPLETYPE = "data2024"     # data2017|data2018|data2024|mc2017|mc2018|mc2024|ttbar2024
+# These reproduce the path convention built by LaunchBkgPred.py. The output
+# directory, the dataset and its sample type come from the paths file
+# (cfg/paths.json; --paths, --dataset).
 # SUFFIX must reproduce the launcher's final labelDir, i.e. including the cut
 # prefix the launcher prepends when both eopCut and sigmaPtCut are set.
 SUFFIX     = "v2"
@@ -582,16 +581,6 @@ def plotSummary(entries, total, xtitle, outDir, outTitle, eta, sampleTag, lumiLa
 # ==================================================================
 #   Paths (same rules as ShowPlots.py)
 # ==================================================================
-def getVersion(stem):
-    # "..._V12p35" -> "12p35". Slightly looser than the launcher's regex: the
-    # version may be followed by an underscore instead of ending the name.
-    m = re.search(r"_V([0-9A-Za-z]+?)(?:_|$)", stem)
-    if not m:
-        print("Can't extract version of '{}' ('_V' expected)".format(stem))
-        sys.exit(1)
-    return m.group(1)
-
-
 def predictionPath(indir, eta, stem, cuts, label):
     # Mirrors the output name built by BkgPrediction.C:
     #     <dataset stem> + "_" + <eta range> + <cuts> + "_" + <label>
@@ -740,6 +729,10 @@ def main():
                       help="override CUTS")
     parser.add_option("--indir", dest="indir", default=None,
                       help="override the working directory")
+    parser.add_option("--paths", dest="paths", default=None,
+                      help="paths file (default: cfg/paths.json)")
+    parser.add_option("--dataset", dest="dataset", default=None,
+                      help="dataset of the paths file (default: its 'dataset')")
     parser.add_option("--systdir", dest="systdir", default=SYSTDIR,
                       help="output directory")
     parser.add_option("--only", dest="only", default=None,
@@ -776,20 +769,19 @@ def main():
         sys.exit(1)
     lumiLabel = "{:g} fb^{{-1}} (13.6 TeV)".format(LUMI[opts.era])
 
-    # stem is the dataset base name, used both to find the version and as the
-    # prefix of every prediction file.
-    stem = os.path.basename(DATASET)
+    P = paths.load(opts.paths)
+    dataset, sampleType = P.dataset(opts.dataset)
+    # stem is the dataset base name, the prefix of every prediction file.
+    stem = os.path.basename(dataset)
     if opts.indir:
-        # --indir bypasses the whole convention; the version is then unknown and
-        # only used for display.
-        indir, version = opts.indir, "?"
+        # --indir bypasses the whole convention.
+        indir = opts.indir
     else:
-        version = getVersion(stem)
-        indir   = "{}/{}_V{}__{}_{}".format(BASE, SAMPLETYPE, version,
-                                            opts.region, opts.suffix)
+        # <output_dir>/<sampleType>__<region>_<suffix>, as written by LaunchBkgPred.py
+        indir = "{}/{}__{}_{}".format(P.output_dir, sampleType, opts.region, opts.suffix)
 
     print("Repository: {}".format(indir))
-    print("Prefix    : {}   version {}   region {}".format(stem, version, opts.region))
+    print("Prefix    : {}   region {}".format(stem, opts.region))
     if opts.nominalOnly:
         print("/!\\ --nominal-only: no systematics will be computed")
 

@@ -26,10 +26,11 @@ import ROOT
 import math
 import array
 import ctypes
-sys.path.append("/safe/ui3_1/cms/gcoulon")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tdrstyle.py, paths.py
 
 from ROOT import THStack, TCanvas, TLegend, TPad, TH1, TLine
 import tdrstyle
+import paths
 
 ROOT.gROOT.SetBatch(True)                   # no X11: the script only writes files
 ROOT.gErrorIgnoreLevel = ROOT.kWarning + 1  # drops the Info messages
@@ -332,6 +333,15 @@ def getNominalSyst(ifile, plotType, region, sizeRebinning, rebinning):
 #                       Main
 #----------------------------------------------------
 
+def openOrExit(path):
+    # A missing input is named, instead of failing later on a None histogram.
+    f = ROOT.TFile.Open(path)
+    if (not f) or f.IsZombie():
+        print("Error: can't open " + path + " (see the paths file, cfg/paths.json)")
+        sys.exit(1)
+    return f
+
+
 def main(argv):
     # -------------- Setup --------------
     outputfile  = ''
@@ -346,7 +356,7 @@ def main(argv):
 
     # Settings overridable from the launcher
     isTTbar = False       # MC: plot the dileptonic ttbar only
-    Vsignal = "19p12"     # version of the gluino samples
+    pathsFile = None      # paths file: default cfg/paths.json
     year    = "2024"
     era     = ""          # "" (whole year) | "F" | "G"
 
@@ -354,12 +364,12 @@ def main(argv):
         opts, args = getopt.getopt(argv, "", ["ifile=", "cuts=", "ofile=",
                                               "region=", "odir=", "nom=",
                                               "eta=", "isMC=", "systfile=",
-                                              "vsignal=", "isTTbar=",
+                                              "isTTbar=", "paths=",
                                               "year=", "era="])
     except getopt.GetoptError:
         print("PlottingMacro.py --ifile <f> --cuts <c> --ofile <o> --region <r> "
               "--odir <d> --nom <bool> --eta <e> --isMC <bool> --systfile <f> "
-              "[--vsignal <v>] [--isTTbar <bool>] [--year <y>] [--era <e>]")
+              "[--isTTbar <bool>] [--year <y>] [--era <e>] [--paths <cfg/paths.json>]")
         sys.exit(2)
 
     for o, arg in opts:
@@ -372,11 +382,12 @@ def main(argv):
         elif o == "--eta":      eta         = arg
         elif o == "--isMC":     isMC        = asBool(arg)
         elif o == "--systfile": systfile    = arg
-        elif o == "--vsignal":  Vsignal     = arg
         elif o == "--isTTbar":  isTTbar     = asBool(arg)
+        elif o == "--paths":    pathsFile   = arg
         elif o == "--year":     year        = arg
         elif o == "--era":      era         = arg
 
+    P = paths.load(pathsFile)
     os.system('mkdir -p ' + odir)
     outputfile = odir + '/' + outputfile
 
@@ -392,7 +403,7 @@ def main(argv):
     print (' Input file: ', inputfile)
     print ('Output file: ', outputfile)
     print ('     Region: ', region, '   eta:', eta, '   blind:', blind)
-    print ('     Signal: V' + Vsignal, '   year:', year, ('era ' + era) if era else '')
+    print ('       Year: ', year, ('era ' + era) if era else '')
 
 
     ifile = ROOT.TFile(inputfile)
@@ -418,10 +429,11 @@ def main(argv):
     # In MC the "observation" is replaced by the sum of the simulated processes,
     # which lets the ABCD closure be tested where the truth is known.
     if isMC:
-        ifileWjet  = ROOT.TFile.Open("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/Wjets2024_V14/WjetMuNu2024_V14p14_weighted.root")
-        ifileTTbar = ROOT.TFile.Open("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/TTbar2024_V15/TTbar2024_V15p10_weighted.root")
-        ifileTTbarSemiLep = ROOT.TFile.Open("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/TTbar2024_V15/TTbarSemiLep2024_V22p1_weighted.root")
-        ifileQCD   = ROOT.TFile.Open("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/QCD2024_V16/QCD2024_mu_V16p3_weighted.root")
+        # The weighted files of the paths file (mc_stack).
+        ifileWjet         = openOrExit(P.mc_stack["wjets"])
+        ifileTTbar        = openOrExit(P.mc_stack["ttbar"])
+        ifileTTbarSemiLep = openOrExit(P.mc_stack["ttbar_semilep"])
+        ifileQCD          = openOrExit(P.mc_stack["qcd"])
 
         # The search region reads region D, the validation region reads region C.
         prefix = "mass_regionD_" if region == "9fp10" else "mass_regionC_"
@@ -458,14 +470,15 @@ def main(argv):
 
 
     # -------------- Signal overlays --------------
-    # Three gluino mass points, read from the weighted step1 files.
-    ifileGl2000 = ROOT.TFile("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/Gluino_V19/Gluino_Run3_MET_madgraph_2000_V" + Vsignal + "_weighted.root")
+    # Three signal points, read from the weighted step1 files of the paths file
+    # (signal_overlays: file and legend label). The variable names keep the
+    # default gluino masses; any signal file of step 1 works (a stau, a stop).
+    (fileGl2000, labelGl2000), (fileGl2400, labelGl2400), (fileGl2600, labelGl2600) = P.signal_overlays
+    ifileGl2000 = openOrExit(fileGl2000)
     m_Gl2000 = ifileGl2000.Get(mcTag + "_" + region + "_SignalMass_nominal")
-    ifileGl2400 = ROOT.TFile("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/Gluino_V19/Gluino_Run3_MET_madgraph_2400_V" + Vsignal + "_weighted.root")
-    #ifileGl2400 = ROOT.TFile("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/Stau_V20/Stau_Run3_MET_871_V20p0_weighted.root")
+    ifileGl2400 = openOrExit(fileGl2400)
     m_Gl2400 = ifileGl2400.Get(mcTag + "_" + region + "_SignalMass_nominal")
-    ifileGl2600 = ROOT.TFile("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/Gluino_V19/Gluino_Run3_MET_madgraph_2600_V" + Vsignal + "_weighted.root")
-    #ifileGl2600 = ROOT.TFile("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/Stop_V21/Stop_Run3_MET_madgraph_1800_V21p0_weighted.root")
+    ifileGl2600 = openOrExit(fileGl2600)
     m_Gl2600 = ifileGl2600.Get(mcTag + "_" + region + "_SignalMass_nominal")
     
     if (not m_Gl2400) or (not m_Gl2000) or (not m_Gl2600):
@@ -881,11 +894,9 @@ def main(argv):
  
 
     if (PlotSignal):
-        leg.AddEntry(m_Gl2000,"#tilde{g} (M=2000 GeV)","l")
-        leg.AddEntry(m_Gl2400,"#tilde{g} (M=2400 GeV)","l")
-        leg.AddEntry(m_Gl2600,"#tilde{g} (M=2600 GeV)","l")
-        #leg.AddEntry(m_Gl2400,"#tilde{#tau}_{L,R} (M=871 GeV)","l")
-        #leg.AddEntry(m_Gl2600,"#tilde{t} (M=1800 GeV)","l")
+        leg.AddEntry(m_Gl2000,labelGl2000,"l")
+        leg.AddEntry(m_Gl2400,labelGl2400,"l")
+        leg.AddEntry(m_Gl2600,labelGl2600,"l")
 
     
 

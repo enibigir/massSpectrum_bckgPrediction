@@ -37,6 +37,7 @@ from collections import OrderedDict
 import ROOT
 from ROOT import TFile, TCanvas, TLegend, TLatex, TPad, TLine
 import tdrstyle
+import paths
 
 ROOT.gROOT.SetBatch(True)
 ROOT.gErrorIgnoreLevel = ROOT.kWarning
@@ -48,8 +49,8 @@ tdrstyle.setTDRStyle()
 # ==================================================================
 #   Settings
 # ==================================================================
-IDIR    = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/Gluino_V19/"
-VSIGNAL = "19p12"
+# The directory of the signal files is the signal_dir of the paths file
+# (cfg/paths.json, or --paths).
 # Weighted files carry the cross-section and luminosity weights; the raw ones
 # hold plain event counts. Must match what the plotting macros use.
 WEIGHTED = True          # True -> files '..._weighted.root', like PlottingMacro.py
@@ -567,11 +568,10 @@ def plotTotalAllMasses(dict_sysTot, xtitle, outDir, eta, outTitle="sysTot_allMas
 # ==================================================================
 #   Access to the step1 histograms
 # ==================================================================
-def signalPath(mass, vsignal, weighted):
+def signalPath(mass, weighted):
     # One file per gluino mass point; the "_weighted" flavour carries the
     # cross-section and luminosity weights.
-    return os.path.join(IDIR, "Gluino_Run3_MET_madgraph_{}_V{}{}.root".format(
-                              mass, vsignal, "_weighted" if weighted else ""))
+    return PATHS.signal(mass, weighted)
 
 
 def histoName(cuts, eta, region):
@@ -596,7 +596,7 @@ def getVariation(ifile, hname, suffix, name):
 # ==================================================================
 def processMass(mass, eta, opts):
     # Returns the total systematic histogram, or None if the point was skipped.
-    path = signalPath(mass, opts.vsignal, opts.weighted)
+    path = signalPath(mass, opts.weighted)
     if not os.path.isfile(path):
         print("  missing file: {}".format(path))
         return None
@@ -704,8 +704,6 @@ def main():
                       help="step1 selection, ex. _SigmaPtoverPt_0p5_EoP_0p1")
     parser.add_option("--masses", dest="masses", default=None,
                       help="mass points, separated by commas, ex. 1000,1500,2000. Default: {}".format(MASSES))
-    parser.add_option("--vsignal", dest="vsignal", default=VSIGNAL,
-                      help="signal version")
     parser.add_option("--odir", dest="odir", default=ODIR,
                       help="output directory for the .root and .pdf files")
     # store_false with default=WEIGHTED: --raw flips the module-level setting.
@@ -713,7 +711,11 @@ def main():
                       help="read the unweighted step1 files (no cross-section nor luminosity applied)")
     parser.add_option("--no-plots", dest="noPlots", action="store_true", default=False,
                       help="only .root output")
+    parser.add_option("--paths", dest="paths", default=None,
+                      help="paths file (default: cfg/paths.json)")
     (opts, args) = parser.parse_args()
+    global PATHS
+    PATHS = paths.load(opts.paths)
 
     # The cut string is a fragment of the histogram name and must start with '_',
     # so both "--cuts _EoP_0p1" and "--cuts EoP_0p1" are accepted.
@@ -735,7 +737,7 @@ def main():
 
     # Echoing the resolved histogram name is the quickest way to diagnose a
     # naming mismatch with step1.
-    print("Signal    : V{}{}".format(opts.vsignal, "" if opts.weighted else " (without weights)"))
+    print("Signal    : {}".format("weighted" if opts.weighted else "without weights"))
     print("Histos    : {}_<variation>".format(histoName(opts.cuts, etas[0], opts.region)))
     print("Output    : {}".format(opts.odir))
 

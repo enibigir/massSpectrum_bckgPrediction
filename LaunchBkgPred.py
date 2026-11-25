@@ -21,7 +21,7 @@
 #  change a variation.
 # =============================================================================
 
-import os, sys, glob, time, re, shutil
+import os, sys, glob, time, shutil
 from optparse import OptionParser
 
 # --- Command line ---------------------------------------------------------
@@ -32,23 +32,27 @@ parser.add_option("--all",  dest="runAll", action="store_true", default=False,
                   help="all systematics (default: nominal)")
 parser.add_option("--only", dest="only", default=None,
                   help="labels, separated by commas")
+parser.add_option("--paths", dest="paths", default=None,
+                  help="paths file (default: cfg/paths.json)")
+parser.add_option("--datasets", dest="datasets", default=None,
+                  help="datasets of the paths file, separated by commas (default: its 'launch' list)")
 (opt, args) = parser.parse_args()
 
 # --- Inputs ---------------------------------------------------------------
-# (path without the .root extension, sample type key for the dE/dx calibration).
-# The second element is what selects (K, C) in GetDeDxCalib, so it must track the
-# first: reading MC with the data calibration silently biases the mass spectrum.
-datasetList = [
-    #("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/JetMET2024_V12/JetMET2024_V12p35", "data2024"),
-    #("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/HistForBkg_MC_V3", "mc2024"),
-    ("/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/TTbar2024_V15/TTbar2024_V15p10", "ttbar2024"),
-]
+# The datasets and the output directory come from the paths file (cfg/paths.json):
+# each dataset is (path without the .root extension, sample type key for the dE/dx
+# calibration). The sample type is what selects (K, C) in GetDeDxCalib, so it must
+# match the file: reading MC with the data calibration silently biases the mass spectrum.
+import paths
+P = paths.load(opt.paths)
+names = [n.strip() for n in opt.datasets.split(",") if n.strip()] if opt.datasets else P.launch
+datasetList = [P.dataset(n) for n in names]
 
 # Root of the directory tree the outputs are filed into, plus the pieces used to
 # build the sub-directory names.
-outputDir      = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/outputHist"
+outputDir      = P.output_dir
 etaRangeName   = "Eta2p4"
-sampleTypeName = "data2024"
+sampleTypeName = datasetList[0][1] if datasetList else "data2024"
 labelDir       = "v2"
 
 # Settings shared by every launch of this session.
@@ -167,16 +171,6 @@ elif opt.runAll:
 else:
     toRun = config[:1]
 
-# Version extracted from the dataset: "..._V12p35" -> "12p35"
-# Used to build the destination directory, so that outputs from two step1
-# productions never mix. A dataset name without the "_V" pattern is a hard error.
-def getVersion(dataset):
-    m = re.search(r"_V([0-9A-Za-z]+?)$", os.path.basename(dataset))
-    if not m:
-        print("Can't extract the version from '{}' ('_V' pattern expected)".format(dataset))
-        sys.exit(1)
-    return m.group(1)
-
 # Region covered by the run, deduced from runVR / runSR.
 # Note this is an elif chain: with both flags at 1 the directory is labelled
 # "8fp9" even though the file also contains the SR histograms.
@@ -244,13 +238,11 @@ for dataset, sampleTypeName in datasetList:
         os.remove(cfgPath)
 
         # Move files to outputDir
-        # Destination layout: <outputDir>/<sampleType>_V<version>__<region>_<labelDir>/<etaRange>/
-        # Everything that distinguishes one production from another is in the
-        # path, so outputs never silently overwrite each other.
-        version = getVersion(dataset)
+        # Destination layout: <outputDir>/<sampleType>__<region>_<labelDir>/<etaRange>/
+        # The file names carry no production version: give each production its
+        # own labelDir (or outputDir), otherwise a new run overwrites the old one.
         destdir = os.path.join(outputDir,
-                               "{}_V{}__{}_{}".format(sampleTypeName, version,
-                                                      regionName, labelDir),
+                               "{}__{}_{}".format(sampleTypeName, regionName, labelDir),
                                etaRangeName)
         if not os.path.isdir(destdir):
             os.makedirs(destdir)

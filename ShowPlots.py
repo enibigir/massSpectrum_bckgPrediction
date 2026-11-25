@@ -24,22 +24,17 @@
 #  "file not found" listing at the end rather than as a wrong plot.
 # =============================================================================
 
-import os, re, sys
+import os, sys
 from optparse import OptionParser
+import paths
 
-# Root of the working directories.
-BASE = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/outputHist"
+# The root of the working directories, the dataset (prefix of the .root files
+# produced by step 2) and its sample type come from the paths file
+# (cfg/paths.json; --paths, --dataset), as in the step 2 launcher.
 
 # --- to be set by hand ----------------------------------------------------
-# Same path as in the step2 launcher: it gives the prefix of the .root files
-# produced and the version (whatever follows "_V").
-DATASET    = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/JetMET2024_V12/JetMET2024_V12p35"
-#DATASET    = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/HistForBkg_MC_V3"
-#DATASET     = "/safe/ui3_1/cms/gcoulon/CMSSW_15_0_13_patch1/src/TupleAnalysis/output/TTbar2024_V15/TTbar2024_V15p10"
-SAMPLETYPE = "data2024"   # data2017|data2018|data2024|mc2017|mc2018|mc2024|ttbar2024
 SUFFIX     = "v2"         # free-form suffix of the working directory
 CUTS       = ""#_SigmaPtoverPt_0p5_EoP_0p1"           # step1 selection: "" | "_SigmaPtoverPt_0p5_EoP_0p1" | ...
-VSIGNAL    = "19p12"   # version of the gluino samples
 REGION     = "9fp10"
 YEAR       = "2024"
 ERA        = ""        # "" | "F" | "G"
@@ -49,6 +44,10 @@ ISTTBAR    = False     # MC: plot the dileptonic ttbar only
 # Every constant above can be overridden from the command line, so a one-off
 # plot never requires editing this file.
 parser = OptionParser(usage="Usage: python %prog [options]")
+parser.add_option("--paths",   dest="paths",   default=None,
+                  help="paths file (default: cfg/paths.json)")
+parser.add_option("--dataset", dest="dataset", default=None,
+                  help="dataset of the paths file (default: its 'dataset')")
 parser.add_option("--etas",    dest="etas",    default="Eta2p4",
                   help="eta ranges, separated by commas")
 parser.add_option("--label",   dest="label",   default="nominal",
@@ -65,7 +64,6 @@ parser.add_option("--ofile",   dest="ofile",   default="mass_plot_Cnoabs",
                   help="prefix of the output files")
 parser.add_option("--dry-run", dest="dryrun",  action="store_true", default=False,
                   help="print the commands without running them")
-parser.add_option("--vsignal", dest="vsignal", default=VSIGNAL)
 parser.add_option("--year",    dest="year",    default=YEAR)
 parser.add_option("--era",     dest="era",     default=ERA,
                   help="'' (whole year) | F | G")
@@ -82,27 +80,19 @@ cuts   = opt.cuts   if opt.cuts   is not None else CUTS
 if cuts and not cuts.startswith("_"):
     cuts = "_" + cuts
 
+P = paths.load(opt.paths)
+dataset, sampleType = P.dataset(opt.dataset)
 # stem = prefix of the .root files written by step2 (= basename of the dataset)
-stem = os.path.basename(DATASET)
-
-# "..._V12p35" -> "12p35". The version goes into the working-directory name so
-# that outputs of two step1 productions never mix. Same regex as systBckg.py:
-# the version may end the name or be followed by an underscore.
-m = re.search(r"_V([0-9A-Za-z]+?)(?:_|$)", stem)
-if not m:
-    print("Can't extract the version from '{}' ('_V' pattern expected)".format(stem))
-    sys.exit(1)
-version = m.group(1)
+stem = os.path.basename(dataset)
 
 # The sample type is enough to know whether we are plotting MC.
-isMC  = SAMPLETYPE.startswith("mc") or SAMPLETYPE.startswith("ttbar")
+isMC  = sampleType.startswith("mc") or sampleType.startswith("ttbar")
 # Working directory, matching what the launcher built when it filed the outputs:
-# <sampleType>_V<version>__<region><cuts>_<suffix>
-indir = "{}/{}_V{}__{}{}_{}".format(BASE, SAMPLETYPE, version, REGION, cuts, suffix)
+# <output_dir>/<sampleType>__<region><cuts>_<suffix>
+indir = "{}/{}__{}{}_{}".format(P.output_dir, sampleType, REGION, cuts, suffix)
 
 print("Directory : {}".format(indir))
-print("Prefix    : {}   version {}   {}".format(
-      stem, version, "MC" if isMC else "data"))
+print("Prefix    : {}   {}".format(stem, "MC" if isMC else "data"))
 
 
 etas    = [e.strip() for e in opt.etas.split(",")    if e.strip()]
@@ -142,10 +132,11 @@ for eta in etas:
     command = ("python3 PlottingMacro.py"
                 " --ifile {} --cuts '{}' --ofile {} --region {}"
                 " --odir {} --nom {} --eta {} --isMC {}"
-                " --vsignal {} --isTTbar {} --year {}").format(
+                " --isTTbar {} --year {}").format(
                     ifile, cuts, opt.ofile, region, odir,
                     not opt.syst, eta, isMC,
-                    opt.vsignal, opt.ttbar, opt.year)
+                    opt.ttbar, opt.year)
+    command += " --paths {}".format(P.source)
     if opt.era:      command += " --era {}".format(opt.era)
     if systfile:     command += " --systfile {}".format(systfile)
 
